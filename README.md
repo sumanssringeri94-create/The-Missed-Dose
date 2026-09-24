@@ -122,6 +122,8 @@ Caregiver notification + Coverage Score update
 ## Team
 
 ChaturKridinX
+
+## Team Members
 Suman S
 Vikas N
 Lithin
