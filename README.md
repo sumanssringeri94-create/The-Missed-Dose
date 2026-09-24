@@ -172,4 +172,4 @@ Other limitations:
 
 ## License
 
-Add a license before publishing, or state "All rights reserved."
+Project for hackathon
