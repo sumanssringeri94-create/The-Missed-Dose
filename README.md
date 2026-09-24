@@ -126,6 +126,6 @@ ChaturKridinX
 ## Team Members
 Suman S
 Vikas N
-Lithin
+Yathin S
 Tejas
 
