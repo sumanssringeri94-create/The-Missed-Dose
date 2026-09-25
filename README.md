@@ -1,7 +1,7 @@
 # 💊 Medease (The Missed Dose)
 
 **An offline-first medication safety assistant for fragmented healthcare.**
-Built by **Team VitaForge** for a healthcare hackathon.
+Built by **Team ChaturKrudinX** for a healthcare hackathon.
 
 Snap a photo of a prescription. Medease reads it, checks it against everything the patient is already taking, and turns it into a simple daily routine. It never plays doctor. When something looks wrong, it flags it and sends the patient back to their doctor or pharmacist.
 
@@ -13,6 +13,8 @@ Picture a family where someone takes several medicines a day, prescribed by diff
 
 This hits hardest for elderly patients, people with limited health literacy, and homes managing many medicines at once. In India the same molecule is sold under many brand names (Dolo, Crocin and Calpol are all paracetamol), so patients often can't tell what they're actually taking.
 
+WHO (2016) found that 57.3% of people practicing allopathic medicine in India lack a valid medical qualification, and only 18.8% of rural allopathic practitioners hold proper medical degrees. Patients can't rely on manual checks alone — they need a second pair of eyes between the prescription and the patient.
+
 ## What it does
 
 - **Prescription intake:** photograph a handwritten or printed prescription. A vision model extracts medicine, strength, frequency and duration.
@@ -20,9 +22,10 @@ This hits hardest for elderly patients, people with limited health literacy, and
 - **Running medicine ledger:** prescriptions are remembered on the device, so conflicts between different doctors, even weeks apart, are caught.
 - **Brand-to-generic mapping:** Indian brand names are mapped to their generic molecule and drug class before any check runs.
 - **Safety checks:** duplicate medicines, duplicate drug classes, known interactions, allergy conflicts, and inconsistent or ambiguous instructions.
-- **Doctor Clarification Card:** on a conflict, the app creates a plain-language card the patient can show a chemist or doctor.
+- **Doctor Clarification Card:** on a conflict, the app generates a formal, medical-form-style notice the patient can export or share with a chemist or doctor.
 - **Routine-based schedule:** doses are grouped into Morning, Afternoon and Night and anchored to real life ("after lunch", "before breakfast").
-- **Time-aware dose actions:** upcoming doses stay locked, active doses can be marked Taken or Missed, and duplicate taps are blocked.
+- **Time-aware dose actions:** upcoming doses stay locked, active doses can be marked Taken or Missed, and duplicate taps are blocked. A dose left unconfirmed after its window prompts the user instead of auto-marking it Missed.
+- **Photo-verified "Taken":** optionally confirm a dose by photographing the medicine; the app checks it against the scheduled medicine and marks it taken automatically on a match, or falls back to manual confirmation.
 - **Accessibility:** large text, high contrast, one main action per screen, and read-aloud (text-to-speech).
 - **Cached demo mode:** the Ramesh demo runs fully offline, so it works even with bad Wi-Fi.
 
@@ -31,7 +34,7 @@ This hits hardest for elderly patients, people with limited health literacy, and
 ```
 Prescription photo
       ↓
-Vision-LLM extraction (via local proxy)
+Gemini vision extraction (via local proxy)
       ↓
 Confidence gate (asks only when a critical field is unclear)
       ↓
@@ -46,19 +49,36 @@ Reminders + local caregiver alert indicator
 
 ## Tech stack
 
-| Layer | Technology |
-| --- | --- |
-| Frontend | React, TypeScript, Vite (PWA) |
-| Backend | Node.js proxy in TypeScript (port 8787) |
-| AI extraction | Groq vision model, called only from the backend |
-| On-device storage | Dexie (IndexedDB), encrypted with WebCrypto AES-GCM |
-| Android | Capacitor, with `@capacitor-community/text-to-speech` |
+**Frontend**
+- React + TypeScript, built with Vite (PWA-ready)
+- Tailwind CSS, styled with a WebMD-inspired clinical theme
+- Dexie (IndexedDB) for the on-device medicine ledger
+- WebCrypto (AES-GCM) to encrypt the ledger locally
+- Vitest for unit tests (conflict engine, schedule engine, extraction)
+- Web Speech API for read-aloud ("Listen")
+- MediaDevices API for camera capture (prescriptions and dose-verification photos)
+- html-to-image + Web Share API for the exportable Doctor Clarification Card
+
+**Backend**
+- Node.js + Express, written in TypeScript (`tsx`)
+- Multer for image upload handling
+- Google Gemini 2.5 (vision) for prescription and dose-photo extraction, with a cached demo fallback if the API is unavailable
+- dotenv for config; API keys never reach the client
+
+**Domain logic**
+- Custom conflict engine: duplicate therapy, drug-class duplicates, interactions, allergy checks
+- Custom schedule engine: converts frequency into Morning/Afternoon/Night doses, with a time-aware state machine (Upcoming → Active → Taken/Missed)
+- Local brand-to-generic dataset for Indian medicine names
+
+**Mobile packaging**
+- Capacitor, targeting Android
+- `@capacitor-community/text-to-speech` for native voice playback
 
 ## Project structure
 
 ```
 The-Missed-Dose/
-├── Backend/    Proxy server that forwards image extraction to Groq (keeps the key off the client)
+├── Backend/    Proxy server that forwards image extraction to Gemini (keeps the key off the client)
 ├── Frontend/   Patient app (React + Vite)
 ├── docs/       Architecture notes and demo script
 └── README.md
@@ -82,31 +102,19 @@ The backend is only needed for **live** prescription extraction. The Ramesh demo
 
 ```bash
 cd Backend
-<<<<<<< HEAD
-copy .env.example .env
-# Recommended: put GOOGLE_API_KEY in .env for Gemini extraction.
-# GROQ_API_KEY remains an alternate/fallback provider.
-=======
 copy .env.example .env        # macOS/Linux: cp .env.example .env
->>>>>>> 0eb4df0f9557eb8d66ab94842386c6fbb4ee3c53
 npm install
 npm run dev
 ```
 
-<<<<<<< HEAD
-The proxy tries Google Gemini 2.5 Flash first, then Groq if Gemini fails. Gemini is recommended for handwriting accuracy; its free tier provides up to 1,500 requests/day with no credit card required. Create the key at [aistudio.google.com](https://aistudio.google.com/). Configure `GOOGLE_API_KEY` and `GEMINI_MODEL=gemini-2.5-flash`; keep `GROQ_API_KEY` and `GROQ_MODEL` for fallback. If both providers are unavailable, `/server/extract` returns the bundled cached demo extraction with `source: "cache"`.
-
-The app opens at `http://localhost:5174/`. For an Android phone on the same Wi-Fi, use the Vite Network URL printed in the terminal. The frontend proxies `/server/extract` to `http://localhost:8787`; without a key, network, or enabled vision model, the Ramesh demo stays fully cached.
-=======
 Then edit `.env`:
 
 | Variable | Purpose |
 | --- | --- |
-| `GROQ_API_KEY` | Your Groq API key. Add it only when live extraction is needed. Never commit it. |
-| `GROQ_MODEL` | A vision-capable model that is enabled for your Groq account. |
+| `GOOGLE_API_KEY` | Your Gemini API key. Add it only when live extraction is needed. Never commit it. Get a free key at [aistudio.google.com](https://aistudio.google.com/) (free tier: up to 1,500 requests/day, no credit card required). |
+| `GEMINI_MODEL` | A vision-capable Gemini model, e.g. `gemini-2.5-flash` or `gemini-2.5-pro` for tougher handwriting. |
 
-The frontend proxies `/server/extract` to `http://localhost:8787`. Without a key, network, or an enabled vision model, the demo falls back to cached results.
->>>>>>> 0eb4df0f9557eb8d66ab94842386c6fbb4ee3c53
+The frontend proxies `/server/extract` (and the dose-verification endpoint) to `http://localhost:8787`. Without a key, network access, or an enabled vision model, the app falls back to cached demo results with `source: "cache"` in the response.
 
 ## Tests and builds
 
@@ -114,13 +122,9 @@ The frontend proxies `/server/extract` to `http://localhost:8787`. Without a key
 cd Frontend
 npm test
 npm run build
-<<<<<<< HEAD
-cd ..\Backend
-npm test
-=======
 
 cd ../Backend
->>>>>>> 0eb4df0f9557eb8d66ab94842386c6fbb4ee3c53
+npm test
 npm run build
 ```
 
@@ -137,7 +141,7 @@ npx cap sync android
 # Open the generated android folder in Android Studio
 ```
 
-The Android build uses `@capacitor-community/text-to-speech` for louder native playback. Run `npx cap sync android` after installing dependencies so the native plugin is included in the APK. On the phone, enable a system text-to-speech engine and raise the media volume. The app cannot override the device's hardware volume limit.
+The Android build uses `@capacitor-community/text-to-speech` for louder native playback. Run `npx cap sync android` after installing dependencies so the native plugin is included in the APK. On the phone, enable a system text-to-speech engine and raise the media volume — the app cannot override the device's hardware volume limit.
 
 ## Demo
 
@@ -148,21 +152,21 @@ In short: load the demo patient Ramesh, upload a messy prescription, see the con
 ## Privacy and safety
 
 - Prescription and profile data are intended to stay on the device by default. The profile is written to a Dexie vault encrypted with WebCrypto AES-GCM.
-- The optional extraction request sends only the selected image to the local proxy, which forwards it to Groq when configured.
+- The optional extraction request sends only the selected image to the local proxy, which forwards it to Gemini when configured. Dose-verification photos are handled the same way — used only for the one-time match check, stored locally, never uploaded elsewhere.
 - The app flags uncertainty and conflicts. It **never** tells a patient to stop, skip or change a medicine, and it always says to confirm with a doctor or pharmacist.
-- "No conflicts" is never shown alone. It always appears with the ledger scope.
+- "No conflicts" is never shown alone. It always appears with the ledger scope, e.g. *"Based on 3 prescriptions logged since Jan 2026."*
 - No API keys are shipped to the client.
 
 ## Current scope and limitations
 
 Built and working in this version (Phase 1):
 
-- Prescription intake, confidence gating, brand-to-generic mapping, conflict engine, clarification card, time-aware schedule, read-aloud, cached Ramesh demo.
+- Prescription intake, confidence gating, brand-to-generic mapping, conflict engine, formal-style clarification card, time-aware schedule, photo-verified Taken, read-aloud, cached Ramesh demo.
 
 Intentionally paused for later phases:
 
 - Ambient-audio dose detection
-- Camera motion checks and post-dose wellness signals
+- Camera motion checks and post-dose wellness signals (PPG, tremor)
 - Caregiver share code (the current caregiver alert is a **local demo indicator**)
 - Smart cabinet / refill tracking
 
@@ -187,6 +191,7 @@ Other limitations:
 **Team ChaturKrudinX**
 
 
+
 ## License
 
-Project for hackathon
+Project for hackathon use.
