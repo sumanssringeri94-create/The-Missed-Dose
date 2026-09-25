@@ -79,4 +79,8 @@ export type Dose = {
   medicineLabel: string
   routine: string
   taken: boolean
+  scheduledMinutes: number
+  windowEndMinutes: number
 }
+
+export type DoseStatus = 'UPCOMING' | 'ACTIVE' | 'TAKEN' | 'MISSED'

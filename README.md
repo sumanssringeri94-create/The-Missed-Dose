@@ -17,11 +17,13 @@ Backend proxy (optional for the cached demo):
 ```powershell
 cd Backend
 copy .env.example .env
-# Put GROQ_API_KEY in .env only when live extraction is needed.
-# GROQ_MODEL must be a vision-capable model enabled for your Groq account.
+# Recommended: put GOOGLE_API_KEY in .env for Gemini extraction.
+# GROQ_API_KEY remains an alternate/fallback provider.
 npm install
 npm run dev
 ```
+
+The proxy tries Google Gemini 2.5 Flash first, then Groq if Gemini fails. Gemini is recommended for handwriting accuracy; its free tier provides up to 1,500 requests/day with no credit card required. Create the key at [aistudio.google.com](https://aistudio.google.com/). Configure `GOOGLE_API_KEY` and `GEMINI_MODEL=gemini-2.5-flash`; keep `GROQ_API_KEY` and `GROQ_MODEL` for fallback. If both providers are unavailable, `/server/extract` returns the bundled cached demo extraction with `source: "cache"`.
 
 The app opens at `http://localhost:5174/`. For an Android phone on the same Wi-Fi, use the Vite Network URL printed in the terminal. The frontend proxies `/server/extract` to `http://localhost:8787`; without a key, network, or enabled vision model, the Ramesh demo stays fully cached.
 
@@ -32,6 +34,7 @@ cd Frontend
 npm test
 npm run build
 cd ..\Backend
+npm test
 npm run build
 ```
 

@@ -39,7 +39,15 @@ export function findConflicts(newPrescription: Prescription, ledger: Prescriptio
 }
 
 export function clarificationText(conflict: Conflict, ledger: Prescription[], incoming: Prescription): string {
+  const { prior, added } = clarificationMedicines(conflict, ledger, incoming)
+  const priorLabel = prior?.brand ?? conflict.medicines[0]
+  const addedLabel = added?.brand ?? conflict.medicines.find((brand) => brand !== priorLabel) ?? 'the new prescription'
+  return `Notice for Pharmacist/Doctor: Patient is currently taking ${priorLabel}${prior?.strength ? ` (${prior.generic} ${prior.strength} ${prior.frequency})` : ''}. Today's prescription adds ${addedLabel}${added?.strength ? ` (${added.generic} ${added.strength} ${added.frequency})` : ''}. ${conflict.reason} Do not change or stop a dose without professional advice.`
+}
+
+export function clarificationMedicines(conflict: Conflict, ledger: Prescription[], incoming: Prescription): { prior?: Medicine; added?: Medicine } {
   const prior = ledger.flatMap((item) => item.medicines).find((medicine) => medicine.brand === conflict.medicines[0])
-  const added = incoming.medicines.find((medicine) => medicine.brand === conflict.medicines[conflict.medicines.length - 1])
-  return `Notice for Pharmacist/Doctor: Patient is currently taking ${prior?.brand ?? conflict.medicines[0]}${prior?.strength ? ` (${prior.generic} ${prior.strength} ${prior.frequency})` : ''}. Today's prescription adds ${added?.brand ?? conflict.medicines[conflict.medicines.length - 1]}${added?.strength ? ` (${added.generic} ${added.strength} ${added.frequency})` : ''}. ${conflict.reason} Do not change or stop a dose without professional advice.`
+  const added = incoming.medicines.find((medicine) => medicine.brand !== prior?.brand && conflict.medicines.includes(medicine.brand))
+    ?? incoming.medicines.find((medicine) => medicine.brand !== prior?.brand)
+  return { prior, added }
 }

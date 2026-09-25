@@ -11,7 +11,7 @@ import {
   extractionToPrescription,
 } from "./data/demo";
 import { mapMedicine } from "./engine/brands";
-import { clarificationText, findConflicts } from "./engine/conflicts";
+import { findConflicts } from "./engine/conflicts";
 import { runSafetyChecks } from "./engine/safety";
 import {
   recordDose,
@@ -19,10 +19,17 @@ import {
   MISSED_DOSE_COPY,
   DUPLICATE_DOSE_COPY,
 } from "./engine/doseSafety";
-import { buildSchedule, routineLabel } from "./engine/schedule";
+import {
+  buildSchedule,
+  doseStatus,
+  doseWindowLabel,
+  formatDoseTime,
+  routineLabel,
+} from "./engine/schedule";
 import { doctorVerificationCopy, verifyDoctor } from "./engine/registry";
 import { strings, speechLocales, type SupportedLanguage } from "./i18n/strings";
 import { saveEncryptedProfile } from "./db";
+import { ClarificationNotice } from "./components/ClarificationNotice";
 import type {
   Conflict,
   DoseEvent,
@@ -30,6 +37,8 @@ import type {
   PatientProfile,
   Prescription,
   SafetyFinding,
+  Dose,
+  DoseStatus,
 } from "./types";
 import "./App.css";
 
@@ -62,6 +71,8 @@ function App() {
   const [emergency, setEmergency] = useState(false);
   const [showCabinet, setShowCabinet] = useState(false);
   const [speechMessage, setSpeechMessage] = useState("");
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [lateDosePrompt, setLateDosePrompt] = useState<Dose | null>(null);
   const [cardNode, setCardNode] = useState<HTMLDivElement | null>(null);
   const text = strings[language];
   const medicines = useMemo(
@@ -86,6 +97,11 @@ function App() {
 
   useEffect(() => {
     if ("speechSynthesis" in window) window.speechSynthesis.getVoices();
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(new Date()), 30_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   function saveProfile(next = profileDraft) {
@@ -266,6 +282,29 @@ function App() {
     setTaken((current) => [...current, doseId]);
     setDoseEvents((current) => [...current, recordDose(doseId, current)]);
   }
+  function doseEvent(doseId: string) {
+    return doseEvents
+      .filter((event) => event.doseId === doseId)
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp))[0];
+  }
+  function doseState(dose: Dose): DoseStatus {
+    return doseStatus(dose, doseEvents, currentTime);
+  }
+  function takeDose(dose: Dose) {
+    if (doseState(dose) === "MISSED") {
+      setLateDosePrompt(dose);
+      return;
+    }
+    if (doseState(dose) !== "ACTIVE") return;
+    confirmDose(dose.id);
+  }
+  function confirmLateDose() {
+    if (!lateDosePrompt) return;
+    setTaken((current) => [...current, lateDosePrompt.id]);
+    setDoseEvents((current) => [...current, recordDose(lateDosePrompt.id, current)]);
+    setMessage(`${lateDosePrompt.medicineLabel} recorded as Taken late at ${formatDoseTime(currentTime.getHours() * 60 + currentTime.getMinutes())}.`);
+    setLateDosePrompt(null);
+  }
   function recordSecondDose() {
     const doseId = todayDoses.find((dose) => taken.includes(dose.id))?.id;
     if (doseId)
@@ -274,6 +313,8 @@ function App() {
     setEmergency(true);
   }
   function markMissed(doseId: string) {
+    const dose = todayDoses.find((item) => item.id === doseId);
+    if (!dose || doseState(dose) === "UPCOMING" || doseState(dose) === "TAKEN") return;
     setDoseEvents((current) => [...current, missedDose(doseId)]);
     setMessage(`${text.missed}: ${MISSED_DOSE_COPY}`);
   }
@@ -338,7 +379,7 @@ function App() {
       <main className="app-shell">
         <header className="topbar">
           <div className="brand-mark">
-            <span>VF</span>
+            <span>M</span>
             <div>
               <strong>Medease</strong>
             </div>
@@ -428,7 +469,7 @@ function App() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand-mark">
-          <span>VF</span>
+          <span>M</span>
           <div>
             <strong>Medease</strong>
           </div>
@@ -504,6 +545,9 @@ function App() {
               </div>
               <span className="scope-pill">
                 {completed}/{todayDoses.length || 0} done
+                <small className="schedule-clock">
+                  Local time {currentTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                </small>
               </span>
             </div>
             <div className="progress-track">
@@ -518,9 +562,14 @@ function App() {
                 doses.length > 0 && (
                   <div className="dose-group" key={group}>
                     <h3>{group}</h3>
-                    {doses.map((dose) => (
-                      <div
-                        className={`dose-row ${taken.includes(dose.id) ? "dose-done" : ""}`}
+                    {doses.map((dose) => {
+                      const status = doseState(dose);
+                      const event = doseEvent(dose.id);
+                      const isUpcoming = status === "UPCOMING";
+                      const isTaken = status === "TAKEN";
+                      const isMissed = status === "MISSED";
+                      return <div
+                        className={`dose-row ${isTaken ? "dose-done" : ""}`}
                         key={dose.id}
                       >
                         <div>
@@ -528,6 +577,10 @@ function App() {
                             {routineLabel(dose.routine)}
                           </span>
                           <strong>{dose.medicineLabel}</strong>
+                          {isUpcoming && <small>🔒 Available at {doseWindowLabel(dose).split(" - ")[0]}</small>}
+                          {isMissed && !event && <small>⚠️ Window ended. Did you take this?</small>}
+                          {isTaken && event && <small>✅ Taken at {new Date(event.timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</small>}
+                          {event?.status === "missed" && <small>⚠️ Missed</small>}
                         </div>
                         <button
                           className="listen-button"
@@ -537,19 +590,14 @@ function App() {
                         >
                           {text.listen}
                         </button>
-                        <button onClick={() => confirmDose(dose.id)}>
-                          {taken.includes(dose.id) ? text.recorded : text.taken}
+                        <button disabled={isUpcoming || isTaken || event?.status === "missed"} onClick={() => takeDose(dose)}>
+                          {isTaken ? text.recorded : `${text.taken}${isUpcoming ? " 🔒" : ""}`}
                         </button>
-                        {!taken.includes(dose.id) && (
-                          <button
-                            className="miss-button"
-                            onClick={() => markMissed(dose.id)}
-                          >
-                            {text.missed}
-                          </button>
-                        )}
+                        <button className="miss-button" disabled={isUpcoming || isTaken || event?.status === "missed"} onClick={() => markMissed(dose.id)}>
+                          {event?.status === "missed" ? "⚠️ Missed" : `${text.missed}${isUpcoming ? " 🔒" : ""}`}
+                        </button>
                       </div>
-                    ))}
+                    })}
                   </div>
                 ),
             )}
@@ -685,13 +733,7 @@ function App() {
                   <p>{conflict.reason}</p>
                 </div>
               ))}
-              <div ref={setCardNode} className="clarification-card">
-                <small>NOTICE FOR PHARMACIST / DOCTOR</small>
-                <p>
-                  {clarificationText(conflicts[0], ledger, pending)} Please
-                  confirm with your doctor or pharmacist.
-                </p>
-              </div>
+              <ClarificationNotice conflict={conflicts[0]} ledger={ledger} incoming={pending} patient={profile} cardRef={setCardNode} />
               <button
                 className="outline-button"
                 onClick={() => void shareCard()}
@@ -820,6 +862,22 @@ function App() {
               className="outline-button"
               onClick={() => setDuplicatePrompt(false)}
             >
+              No, go back
+            </button>
+          </div>
+        </div>
+      )}
+      {lateDosePrompt && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>Did you take this dose late?</h2>
+            <p>
+              {lateDosePrompt.medicineLabel} was available during {doseWindowLabel(lateDosePrompt)}. We will record the real time and label it Taken late.
+            </p>
+            <button className="big-button" onClick={confirmLateDose}>
+              Yes, record Taken late
+            </button>
+            <button className="outline-button" onClick={() => setLateDosePrompt(null)}>
               No, go back
             </button>
           </div>
